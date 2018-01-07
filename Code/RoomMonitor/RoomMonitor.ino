@@ -1,7 +1,28 @@
 /*
-* Name: DS18B20 Temperature Sensor
+* Name: Room Temperature Clock Device
 *
-* Description: Digital thermometer
+* Description: Arduino temperature and clock device shield.
+*   Features:
+*     Displays temperature in Fahrenheit and Celsius
+*     Displays Date and Time
+*     Change Date and Time
+*     Change RGB Light Strip Colors
+*     Push buttons to interact with device
+*     Custom greetings
+*     Display dims on/off with environment light and human proximity to device
+*     Date/Time stays updated even when device is unplugged
+*     Buzzer sounds
+*
+*   Components:
+*     Arduino Mega
+*     20x4 LCD 
+*     Tactile push buttons
+*     HC-SR04 Ultrasonic Sensor
+*     Photo Light Cell
+*     DS18b20 Temperature Sensor
+*     DS3231 Time Module
+*     Buzzer
+*     RGB Led Light Strip
 *
 * Author: Amar Bhatt
 */
@@ -37,33 +58,38 @@
 #define DATA_PIN 53
 #define NUM_LEDS 60
 
+//RGB LED Strip
 CRGB leds[NUM_LEDS];
-
 CRGB colors[4] = {CRGB::Black, CRGB::Red, CRGB::Green, CRGB::Blue};
 String colorList[4] = {"Off","Red","Green","Blue"};
 
-int timeout = 5*DIST_THRESH*29.1*2;
-int tempPin = 10;
-int LCDTogglePin = 6;
-int distTrigPin = 9;
-int distEchoPin = 8;
-int lightSensePin = A8;
-int potSensePin = A9;
-int buzzPin = 23;
-int lastOn = 0;
-long current;
+// Set I/O pins
+int tempPin = 10; // pin for DS18b20 temperature sensor
+int LCDTogglePin = 6; // turn LCD on/off
+int distTrigPin = 9; // ultrasonic trigger pin
+int distEchoPin = 8; // ultrasonic echo pin
+int lightSensePin = A8; // environment light sense pin for photocell
+int buzzPin = 23; // pin for buzzer
+
+// Variables
+int timeout = 5*DIST_THRESH*29.1*2; //timeout for ultrasonic set to 5x the distance threshold
+int lastOn = 0; // last time LCD was on
+long current; // current time since device was on
 
 volatile long long timeoutPress = 1000; // 3 seconds
-volatile long long last_change_time = 0;
+volatile long long last_change_time = 0; // button debouncer
 
+// Constant arrays
 String monthList[12] = {"January","February","March","April","May","June","July","August","September","October","November","December"};
 String weekDayList[12] = {"Sunday","Monday","Tuesday","Wednesday","Thursday","Friday","Saturday"};
 
+// Interrupt Pins
 int menuInterrupt = 18;
 int selectInterrupt = 19;
 int selectUpPin = 17;
 int selectDownPin = 16;
 
+// Main loop booleans
 volatile bool setBool = false;
 volatile bool selectOption = false;
 volatile bool setColor = false;
@@ -77,6 +103,7 @@ byte data[12];
 byte addr[8];  
 int16_t raw;
 
+// sensor variables
 long distance;
 bool light;
 
@@ -109,10 +136,6 @@ void setup(void) {
   //setDS3231time(0,6,8,5,12,10,17);
   lcd.begin(20, 4); // 20x4 LCD
   lcd.clear(); //reset lcd
-  //lcd.setCursor(0,0); //set cursor of led to front
-  //lcd.print("Fahrenheit = ");
-  //lcd.setCursor(0,1);
-  //lcd.print("Celsius = ");
 
   //LCD on/off
   pinMode(LCDTogglePin, OUTPUT);
@@ -129,17 +152,18 @@ void setup(void) {
 
   //Initialize Temperature Sensor  
   int stat = connectTemperatureSensor(&ds, addr, &type_s);
-  //Serial.println(stat);
 
+  //Initalize interrupts
   attachInterrupt(digitalPinToInterrupt(menuInterrupt), changeTimeDate, RISING);
   attachInterrupt(digitalPinToInterrupt(selectInterrupt), changeColors, RISING);
+  
   //Initialize Buttons
   pinMode(selectDownPin,INPUT);
   pinMode(selectUpPin, INPUT);
-  
+
+  // Play sound on Buzzer
   playTone();
   clearLine(0);
-  Serial.begin(9600);
 
   // Set up RGB light strip
   FastLED.addLeds<WS2812B, DATA_PIN, GRB>(leds, NUM_LEDS);
@@ -155,18 +179,15 @@ void setup(void) {
 }
 
 void loop(void) {
-
-  if(!setBool) {
-
-    if (setColor) {
+  
+  if(!setBool) { // Regular loop
+    if (setColor) { //Change RGB color
       changeRGBLights();
       setColor = false;
-    }     
-    
-    distance = getDistance();
-    light = isLightOn();
+    }         
+    distance = getDistance(); //Human proximity to device
+    light = isLightOn(); // environment light
     current = millis();
-    //int pot = analogRead(potSensePin);
     displayTemp();
     displayTime();
      
@@ -176,13 +197,10 @@ void loop(void) {
     } else if (!light && distance >= DIST_THRESH && (current-lastOn) < ACTIVITY_THRESH){
       digitalWrite(LCDTogglePin, HIGH);
     } 
-  //  else if (!light && distance < DIST_THRESH) {
-  //    digitalWrite(LCDTogglePin, HIGH);
-  //  }  
-    else {
+    else { // turn off LCD
       digitalWrite(LCDTogglePin, LOW);
     }
-  } else {
+  } else { // Change time
     changeTime();
   }
   
@@ -763,8 +781,6 @@ void changeRGBLights() {
     }
     
   }
-  //Serial.println("Color chosen:");
-  //Serial.println(color);
   detachInterrupt(digitalPinToInterrupt(selectInterrupt));
   setColor = false;
   delay(1000);
